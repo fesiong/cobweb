@@ -239,8 +239,8 @@ func CollectLinks(doc *goquery.Document) []Link {
  * 请求域名返回数据
  */
 func Request(urlPath string) (*RequestData, error) {
-	resp, body, errs := gorequest.New().Timeout(30 * time.Second).Get(urlPath).End()
-	if errs != nil {
+	resp, body, errs := gorequest.New().Timeout(90 * time.Second).Get(urlPath).End()
+	if len(errs) > 0 {
 		//如果是https,则尝试退回http请求
 		if strings.HasPrefix(urlPath, "https") {
 			urlPath = strings.Replace(urlPath, "https://", "http://", 1)
@@ -250,34 +250,44 @@ func Request(urlPath string) (*RequestData, error) {
 	}
 	defer resp.Body.Close()
 	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
-	log.Println(contentType)
 	var htmlEncode string
 
-	if contentType == "" {
+	if strings.Contains(contentType, "gbk") || strings.Contains(contentType, "gb2312") || strings.Contains(contentType, "gb18030") || strings.Contains(contentType, "windows-1252") {
+		htmlEncode = "gb18030"
+	} else if strings.Contains(contentType, "big5") {
+		htmlEncode = "big5"
+	}
+
+	if htmlEncode == "" {
 		//先尝试读取charset
-		reg := regexp.MustCompile(`(?is)charset=["']?\s*([a-z0-9\-]+)`)
+		reg := regexp.MustCompile(`(?is)<meta[^>]*charset\s*=["']?\s*([A-Za-z0-9\-]+)`)
 		match := reg.FindStringSubmatch(body)
 		if len(match) > 1 {
-			htmlEncode = strings.ToLower(match[1])
-			if htmlEncode != "utf-8" && htmlEncode != "utf8" {
-				body = ConvertToString(body, "gbk", "utf-8")
+			contentType = strings.ToLower(match[1])
+			if strings.Contains(contentType, "gbk") || strings.Contains(contentType, "gb2312") || strings.Contains(contentType, "gb18030") || strings.Contains(contentType, "windows-1252") {
+				htmlEncode = "gb18030"
+			} else if strings.Contains(contentType, "big5") {
+				htmlEncode = "big5"
 			}
-		} else {
+		}
+		if htmlEncode == "" {
 			reg = regexp.MustCompile(`(?is)<title[^>]*>(.*?)<\/title>`)
 			match = reg.FindStringSubmatch(body)
 			if len(match) > 1 {
 				aa := match[1]
-				_, htmlEncode, _ = charset.DetermineEncoding([]byte(aa), "")
-				if htmlEncode != "utf-8" {
-					body = ConvertToString(body, "gbk", "utf-8")
+				_, contentType, _ = charset.DetermineEncoding([]byte(aa), "")
+				htmlEncode = strings.ToLower(htmlEncode)
+				if strings.Contains(contentType, "gbk") || strings.Contains(contentType, "gb2312") || strings.Contains(contentType, "gb18030") || strings.Contains(contentType, "windows-1252") {
+					htmlEncode = "gb18030"
+				} else if strings.Contains(contentType, "big5") {
+					htmlEncode = "big5"
 				}
 			}
 		}
-	} else if !strings.Contains(contentType, "utf-8") {
-		body = ConvertToString(body, "gbk", "utf-8")
 	}
-	log.Println(htmlEncode)
-	//log.Println(body)
+	if htmlEncode != "" {
+		body = ConvertToString(body, htmlEncode, "utf-8")
+	}
 
 	requestData := RequestData{
 		Body:   body,

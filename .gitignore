@@ -3,3 +3,7 @@
 /vendor
 /config.json
 /cobweb
+/spider.exe
+/spider.linux*
+/spider.mac*
+/spider.windows*
