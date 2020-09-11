@@ -256,8 +256,9 @@ func Request(urlPath string) (*RequestData, error) {
 		htmlEncode = "gb18030"
 	} else if strings.Contains(contentType, "big5") {
 		htmlEncode = "big5"
+	} else if strings.Contains(contentType, "utf-8") {
+		htmlEncode = "utf-8"
 	}
-
 	if htmlEncode == "" {
 		//先尝试读取charset
 		reg := regexp.MustCompile(`(?is)<meta[^>]*charset\s*=["']?\s*([A-Za-z0-9\-]+)`)
@@ -268,6 +269,8 @@ func Request(urlPath string) (*RequestData, error) {
 				htmlEncode = "gb18030"
 			} else if strings.Contains(contentType, "big5") {
 				htmlEncode = "big5"
+			} else if strings.Contains(contentType, "utf-8") {
+				htmlEncode = "utf-8"
 			}
 		}
 		if htmlEncode == "" {
@@ -281,11 +284,13 @@ func Request(urlPath string) (*RequestData, error) {
 					htmlEncode = "gb18030"
 				} else if strings.Contains(contentType, "big5") {
 					htmlEncode = "big5"
+				} else if strings.Contains(contentType, "utf-8") {
+					htmlEncode = "utf-8"
 				}
 			}
 		}
 	}
-	if htmlEncode != "" {
+	if htmlEncode != "" && htmlEncode != "utf-8" {
 		body = ConvertToString(body, htmlEncode, "utf-8")
 	}
 
