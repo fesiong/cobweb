@@ -3,8 +3,7 @@ package cobweb
 import (
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
-	"github.com/parnurzeal/gorequest"
-	"golang.org/x/net/html/charset"
+	"github.com/fesiong/goproject/convert"
 	"log"
 	"net"
 	"regexp"
@@ -20,7 +19,7 @@ var ch = make(chan string, MaxChan)
 /**
  * 循环获取数据
  */
-func StartSpider(){
+func StartSpider() {
 	//for i := 0; i < MaxChan; i++ {
 	//	ch <- i
 	//	waitGroup.Add(1)
@@ -32,10 +31,10 @@ func StartSpider(){
 	log.Println("执行结束")
 }
 
-func SingleSpider(){
+func SingleSpider() {
 	var websites []Website
 	var counter int
-	DB.Model(&Website{}).Where("`status` = 0").Limit(MaxChan*10).Count(&counter).Find(&websites)
+	DB.Model(&Website{}).Where("`status` = 0").Limit(MaxChan * 10).Count(&counter).Find(&websites)
 	if counter > 0 {
 		for _, v := range websites {
 			ch <- v.Domain
@@ -52,7 +51,7 @@ func SingleSpider(){
 /**
  * 单个执行
  */
-func SingleData(){
+func SingleData() {
 	counter := 0
 	var website Website
 	err := DB.Where("`status` = 0").First(&website).Error
@@ -83,7 +82,7 @@ func SingleData(){
 				//	Scheme: v.Scheme,
 				//	Title:  v.Title,
 				//}
-				log.Println(fmt.Sprintf("入库：%d：%s",website.ID, v.Domain))
+				log.Println(fmt.Sprintf("入库：%d：%s", website.ID, v.Domain))
 				DB.Exec("insert into website(`domain`, `scheme`,`title`) select ?,?,? from dual where not exists(select id from website where `domain` = ?)", v.Domain, v.Scheme, v.Title, v.Domain)
 			}
 		}
@@ -92,7 +91,7 @@ func SingleData(){
 	SingleData()
 }
 
-func SingleData2(website Website){
+func SingleData2(website Website) {
 	defer func() {
 		waitGroup.Done()
 		<-ch
@@ -106,7 +105,7 @@ func SingleData2(website Website){
 	} else {
 		website.Status = 3
 	}
-	log.Println(fmt.Sprintf("入库2：%d：%s",website.ID, website.Domain))
+	log.Println(fmt.Sprintf("入库2：%d：%s", website.ID, website.Domain))
 	DB.Save(&website)
 	if len(website.Links) > 0 {
 		for _, v := range website.Links {
@@ -116,7 +115,7 @@ func SingleData2(website Website){
 			//	Scheme: v.Scheme,
 			//	Title:  v.Title,
 			//}
-			log.Println(fmt.Sprintf("入库：%d：%s",website.ID, v.Domain))
+			log.Println(fmt.Sprintf("入库：%d：%s", website.ID, v.Domain))
 			DB.Exec("insert into website(`domain`, `scheme`,`title`) select ?,?,? from dual where not exists(select id from website where `domain` = ?)", v.Domain, v.Scheme, v.Title, v.Domain)
 		}
 	}
@@ -239,63 +238,18 @@ func CollectLinks(doc *goquery.Document) []Link {
  * 请求域名返回数据
  */
 func Request(urlPath string) (*RequestData, error) {
-	resp, body, errs := gorequest.New().Timeout(90 * time.Second).Get(urlPath).End()
-	if len(errs) > 0 {
+	resp, err := convert.Request(urlPath)
+	if err != nil {
 		//如果是https,则尝试退回http请求
 		if strings.HasPrefix(urlPath, "https") {
 			urlPath = strings.Replace(urlPath, "https://", "http://", 1)
 			return Request(urlPath)
 		}
-		return nil, errs[0]
-	}
-	defer resp.Body.Close()
-	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
-	var htmlEncode string
-
-	if strings.Contains(contentType, "gbk") || strings.Contains(contentType, "gb2312") || strings.Contains(contentType, "gb18030") || strings.Contains(contentType, "windows-1252") {
-		htmlEncode = "gb18030"
-	} else if strings.Contains(contentType, "big5") {
-		htmlEncode = "big5"
-	} else if strings.Contains(contentType, "utf-8") {
-		htmlEncode = "utf-8"
-	}
-	if htmlEncode == "" {
-		//先尝试读取charset
-		reg := regexp.MustCompile(`(?is)<meta[^>]*charset\s*=["']?\s*([A-Za-z0-9\-]+)`)
-		match := reg.FindStringSubmatch(body)
-		if len(match) > 1 {
-			contentType = strings.ToLower(match[1])
-			if strings.Contains(contentType, "gbk") || strings.Contains(contentType, "gb2312") || strings.Contains(contentType, "gb18030") || strings.Contains(contentType, "windows-1252") {
-				htmlEncode = "gb18030"
-			} else if strings.Contains(contentType, "big5") {
-				htmlEncode = "big5"
-			} else if strings.Contains(contentType, "utf-8") {
-				htmlEncode = "utf-8"
-			}
-		}
-		if htmlEncode == "" {
-			reg = regexp.MustCompile(`(?is)<title[^>]*>(.*?)<\/title>`)
-			match = reg.FindStringSubmatch(body)
-			if len(match) > 1 {
-				aa := match[1]
-				_, contentType, _ = charset.DetermineEncoding([]byte(aa), "")
-				htmlEncode = strings.ToLower(htmlEncode)
-				if strings.Contains(contentType, "gbk") || strings.Contains(contentType, "gb2312") || strings.Contains(contentType, "gb18030") || strings.Contains(contentType, "windows-1252") {
-					htmlEncode = "gb18030"
-				} else if strings.Contains(contentType, "big5") {
-					htmlEncode = "big5"
-				} else if strings.Contains(contentType, "utf-8") {
-					htmlEncode = "utf-8"
-				}
-			}
-		}
-	}
-	if htmlEncode != "" && htmlEncode != "utf-8" {
-		body = ConvertToString(body, htmlEncode, "utf-8")
+		return nil, err
 	}
 
 	requestData := RequestData{
-		Body:   body,
+		Body:   resp.Body,
 		Domain: resp.Request.Host,
 		Scheme: resp.Request.URL.Scheme,
 		Server: resp.Header.Get("Server"),
@@ -304,7 +258,7 @@ func Request(urlPath string) (*RequestData, error) {
 	return &requestData, nil
 }
 
-func init(){
+func init() {
 	websites := []Website{
 		{Scheme: "https", Domain: "www.hao123.com"},
 		{Scheme: "https", Domain: "www.2345.com"},
