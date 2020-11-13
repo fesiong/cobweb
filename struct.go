@@ -9,8 +9,8 @@ type RequestData struct {
 }
 
 type Website struct {
-	ID          uint64 `json:"id" gorm:"column:id;type:bigint(20);unique;unsigned;not null;primary_key;AUTO_INCREMENT"`
-	Domain      string `json:"domain" gorm:"column:domain;type:varchar(255);not null;default:''"`
+	//ID          uint64 `json:"id" gorm:"column:id;type:bigint(20);unique;unsigned;primary_key;AUTO_INCREMENT"`
+	Domain      string `json:"domain" gorm:"column:domain;type:varchar(255);not null;default:'';index:idx_domain"`
 	Scheme      string `json:"scheme" gorm:"column:scheme;type:varchar(10);not null;default:''"`
 	Title       string `json:"title" gorm:"column:title;type:varchar(255);not null;default:''"`
 	Description string `json:"description" gorm:"column:description;type:varchar(255);not null;default:''"`
@@ -20,7 +20,7 @@ type Website struct {
 	Cellphone   string `json:"cellphone" gorm:"column:cellphone;type:varchar(100);not null;default:''"`
 	Server      string `json:"server" gorm:"column:server;type:varchar(255);not null;default:''"`
 	Cms         string `json:"cms" gorm:"column:cms;type:varchar(100);not null;default:''"`
-	Status      uint   `json:"status" gorm:"column:status;type:tinyint(1);not null;default:'0'"`
+	Status      uint   `json:"status" gorm:"column:status;type:tinyint(1);not null;default:0"`
 	Url         string `json:"-" gorm:"-"`
 	Links       []Link `json:"-" gorm:"-"`
 }

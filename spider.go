@@ -33,7 +33,7 @@ func StartSpider() {
 
 func SingleSpider() {
 	var websites []Website
-	var counter int
+	var counter int64
 	DB.Model(&Website{}).Where("`status` = 0").Limit(MaxChan * 10).Count(&counter).Find(&websites)
 	if counter > 0 {
 		for _, v := range websites {
@@ -65,7 +65,7 @@ func SingleData() {
 		time.Sleep(10 * time.Second)
 	} else {
 		//锁定当前数据
-		DB.Model(&website).Where("`id` = ?", website.ID).Update("status", 2)
+		DB.Model(&website).UpdateColumn("status", 2)
 		log.Println(fmt.Sprintf("开始采集：%s://%s", website.Scheme, website.Domain))
 		err = website.GetWebsite()
 		if err == nil {
@@ -82,7 +82,7 @@ func SingleData() {
 				//	Scheme: v.Scheme,
 				//	Title:  v.Title,
 				//}
-				log.Println(fmt.Sprintf("入库：%d：%s", website.ID, v.Domain))
+				log.Println(fmt.Sprintf("入库：%s", v.Domain))
 				DB.Exec("insert into website(`domain`, `scheme`,`title`) select ?,?,? from dual where not exists(select id from website where `domain` = ?)", v.Domain, v.Scheme, v.Title, v.Domain)
 			}
 		}
@@ -97,7 +97,7 @@ func SingleData2(website Website) {
 		<-ch
 	}()
 	//锁定当前数据
-	DB.Model(&website).Where("`id` = ?", website.ID).Update("status", 2)
+	DB.Model(&website).Where("`domain` = ?", website.Domain).UpdateColumn("status", 2)
 	log.Println(fmt.Sprintf("开始采集：%s://%s", website.Scheme, website.Domain))
 	err := website.GetWebsite()
 	if err == nil {
@@ -105,18 +105,19 @@ func SingleData2(website Website) {
 	} else {
 		website.Status = 3
 	}
-	log.Println(fmt.Sprintf("入库2：%d：%s", website.ID, website.Domain))
-	DB.Save(&website)
+	log.Println(fmt.Sprintf("入库2：%s", website.Domain))
+	DB.Where("`domain` = ?", website.Domain).Save(&website)
 	if len(website.Links) > 0 {
 		for _, v := range website.Links {
-			//webData := Website{
-			//	Url:    v.Url,
-			//	Domain: v.Domain,
-			//	Scheme: v.Scheme,
-			//	Title:  v.Title,
-			//}
-			log.Println(fmt.Sprintf("入库：%d：%s", website.ID, v.Domain))
-			DB.Exec("insert into website(`domain`, `scheme`,`title`) select ?,?,? from dual where not exists(select id from website where `domain` = ?)", v.Domain, v.Scheme, v.Title, v.Domain)
+			webData := Website{
+				Url:    v.Url,
+				Domain: v.Domain,
+				Scheme: v.Scheme,
+				Title:  v.Title,
+			}
+			DB.Where("`domain` = ?", webData.Domain).FirstOrCreate(&webData)
+			log.Println(fmt.Sprintf("入库：%s", v.Domain))
+			//DB.Exec("insert into website(`domain`, `scheme`,`title`) select ?,?,? from dual where not exists(select domain from website where `domain` = ?)", v.Domain, v.Scheme, v.Title, v.Domain)
 		}
 	}
 }
@@ -217,15 +218,20 @@ func CollectLinks(doc *goquery.Document) []Link {
 		if exists {
 			scheme, host := ParseDomain(href)
 			if host != "" && scheme != "" {
-				if !existsLinks[host] {
-					//去重
-					existsLinks[host] = true
-					links = append(links, Link{
-						Title:  title,
-						Url:    scheme + "://" + host,
-						Domain: host,
-						Scheme: scheme,
-					})
+				hosts := strings.Split(host, ".")
+				if len(hosts) < 2 || len(hosts) > 3 && hosts[0] != "www" {
+					//refuse
+				} else {
+					if !existsLinks[host] {
+						//去重
+						existsLinks[host] = true
+						links = append(links, Link{
+							Title:  title,
+							Url:    scheme + "://" + host,
+							Domain: host,
+							Scheme: scheme,
+						})
+					}
 				}
 			}
 		}
@@ -259,6 +265,8 @@ func Request(urlPath string) (*RequestData, error) {
 }
 
 func init() {
+	initDB()
+
 	websites := []Website{
 		{Scheme: "https", Domain: "www.hao123.com"},
 		{Scheme: "https", Domain: "www.2345.com"},
