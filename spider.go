@@ -3,7 +3,6 @@ package cobweb
 import (
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
-	"github.com/fesiong/goproject/convert"
 	"log"
 	"net"
 	"regexp"
@@ -12,7 +11,7 @@ import (
 	"time"
 )
 
-var MaxChan = 100
+var MaxChan = 50
 var waitGroup sync.WaitGroup
 var ch = make(chan string, MaxChan)
 
@@ -238,30 +237,6 @@ func CollectLinks(doc *goquery.Document) []Link {
 	}
 
 	return links
-}
-
-/**
- * 请求域名返回数据
- */
-func Request(urlPath string) (*RequestData, error) {
-	resp, err := convert.Request(urlPath)
-	if err != nil {
-		//如果是https,则尝试退回http请求
-		if strings.HasPrefix(urlPath, "https") {
-			urlPath = strings.Replace(urlPath, "https://", "http://", 1)
-			return Request(urlPath)
-		}
-		return nil, err
-	}
-
-	requestData := RequestData{
-		Body:   resp.Body,
-		Domain: resp.Request.Host,
-		Scheme: resp.Request.URL.Scheme,
-		Server: resp.Header.Get("Server"),
-	}
-
-	return &requestData, nil
 }
 
 func init() {

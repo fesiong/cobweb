@@ -1,13 +1,5 @@
 package cobweb
 
-type RequestData struct {
-	Body   string
-	Domain string
-	Scheme string
-	IP     string
-	Server string
-}
-
 type Website struct {
 	//ID          uint64 `json:"id" gorm:"column:id;type:bigint(20);unique;unsigned;primary_key;AUTO_INCREMENT"`
 	Domain      string `json:"domain" gorm:"column:domain;type:varchar(255);not null;default:'';index:idx_domain"`
