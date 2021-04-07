@@ -3,6 +3,7 @@ package cobweb
 import (
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
+	"github.com/fesiong/goproject/convert"
 	"log"
 	"net"
 	"regexp"
@@ -128,7 +129,7 @@ func (website *Website) GetWebsite() error {
 	if website.Url == "" {
 		website.Url = website.Scheme + "://" + website.Domain
 	}
-	requestData, err := Request(website.Url)
+	requestData, err := convert.Request(website.Url)
 	if err != nil {
 		log.Println(err)
 		return err
