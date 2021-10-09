@@ -3,7 +3,6 @@ package cobweb
 import (
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
-	"github.com/fesiong/goproject/convert"
 	"log"
 	"net"
 	"regexp"
@@ -12,19 +11,41 @@ import (
 	"time"
 )
 
-var MaxChan = 50
+var MaxChan = 20
 var waitGroup sync.WaitGroup
 var ch = make(chan string, MaxChan)
+
+var existsDomain = &sync.Map{}
+var runMap = &sync.Map{}
+var topDomains = &sync.Map{}
 
 /**
  * 循环获取数据
  */
 func StartSpider() {
-	//for i := 0; i < MaxChan; i++ {
-	//	ch <- i
-	//	waitGroup.Add(1)
-	//	go SingleSpider()
-	//}
+	var websites []*Website
+	lastId := uint64(0)
+	for {
+		DB.Where("id > ?", lastId).Order("id asc").Limit(50000).Find(&websites)
+		if len(websites) == 0 {
+			break
+		}
+		lastId = websites[len(websites)-1].ID
+		log.Println("load: ", lastId)
+		for _, v := range websites {
+			item, ok := topDomains.Load(v.TopDomain)
+			if ok {
+				topDomains.Store(v.TopDomain, item.(int)+1)
+			} else {
+				topDomains.Store(v.TopDomain, 1)
+			}
+
+			existsDomain.Store(v.Domain, true)
+			if v.Status == 0 {
+				runMap.Store(v.Domain, v.Scheme)
+			}
+		}
+	}
 
 	SingleSpider()
 	waitGroup.Wait()
@@ -32,63 +53,39 @@ func StartSpider() {
 }
 
 func SingleSpider() {
+
+	runMap.Range(func(key interface{}, value interface{}) bool {
+		domain := key.(string)
+		scheme := value.(string)
+
+		v := Website{
+			Domain: domain,
+			Scheme: scheme,
+		}
+
+		ch <- v.Domain
+		waitGroup.Add(1)
+		go SingleData2(v)
+
+		return true
+	})
+
 	var websites []Website
-	var counter int64
-	DB.Model(&Website{}).Where("`status` = 0").Limit(MaxChan * 10).Count(&counter).Find(&websites)
-	if counter > 0 {
+	DB.Model(&Website{}).Where("`status` = 0").Limit(MaxChan * 10).Order("id asc").Find(&websites)
+	if len(websites) > 0 {
 		for _, v := range websites {
 			ch <- v.Domain
 			waitGroup.Add(1)
 			go SingleData2(v)
 		}
 	} else {
-		log.Println("等待数据中，10秒后重试")
-		time.Sleep(10 * time.Second)
+		//读取完了，重头开始吗？
 	}
+
+	log.Println("等待数据中，10秒后重试")
+	time.Sleep(10 * time.Second)
+
 	SingleSpider()
-}
-
-/**
- * 单个执行
- */
-func SingleData() {
-	counter := 0
-	var website Website
-	err := DB.Where("`status` = 0").First(&website).Error
-	if err != nil {
-		counter++
-		if counter > 10 {
-			return
-		}
-
-		log.Println("等待数据中，10秒后重试")
-		time.Sleep(10 * time.Second)
-	} else {
-		//锁定当前数据
-		DB.Model(&website).UpdateColumn("status", 2)
-		log.Println(fmt.Sprintf("开始采集：%s://%s", website.Scheme, website.Domain))
-		err = website.GetWebsite()
-		if err == nil {
-			website.Status = 1
-		} else {
-			website.Status = 3
-		}
-		DB.Save(&website)
-		if len(website.Links) > 0 {
-			for _, v := range website.Links {
-				//webData := Website{
-				//	Url:    v.Url,
-				//	Domain: v.Domain,
-				//	Scheme: v.Scheme,
-				//	Title:  v.Title,
-				//}
-				log.Println(fmt.Sprintf("入库：%s", v.Domain))
-				DB.Exec("insert into website(`domain`, `scheme`,`title`) select ?,?,? from dual where not exists(select id from website where `domain` = ?)", v.Domain, v.Scheme, v.Title, v.Domain)
-			}
-		}
-	}
-
-	SingleData()
 }
 
 func SingleData2(website Website) {
@@ -97,7 +94,7 @@ func SingleData2(website Website) {
 		<-ch
 	}()
 	//锁定当前数据
-	DB.Model(&website).Where("`domain` = ?", website.Domain).UpdateColumn("status", 2)
+	DB.Model(&Website{}).Where("`domain` = ?", website.Domain).UpdateColumn("status", 2)
 	log.Println(fmt.Sprintf("开始采集：%s://%s", website.Scheme, website.Domain))
 	err := website.GetWebsite()
 	if err == nil {
@@ -109,15 +106,33 @@ func SingleData2(website Website) {
 	DB.Where("`domain` = ?", website.Domain).Save(&website)
 	if len(website.Links) > 0 {
 		for _, v := range website.Links {
-			webData := Website{
-				Url:    v.Url,
-				Domain: v.Domain,
-				Scheme: v.Scheme,
-				Title:  v.Title,
+			//如果超过了5个子域名，则直接抛弃
+			item, itemOk := topDomains.Load(v.TopDomain)
+			if itemOk {
+				if item.(int) >= 5 {
+					//跳过这个记录
+					continue
+				}
 			}
-			DB.Where("`domain` = ?", webData.Domain).FirstOrCreate(&webData)
+			if _, ok := existsDomain.Load(v.Domain); ok {
+				continue
+			}
+			if itemOk {
+				topDomains.Store(v.TopDomain, item.(int) + 1)
+			} else {
+				topDomains.Store(v.TopDomain, 1)
+			}
+			existsDomain.Store(v.Domain, true)
+			runMap.Store(v.Domain, v.Scheme)
+			webData := Website{
+				Url:       v.Url,
+				Domain:    v.Domain,
+				TopDomain: v.TopDomain,
+				Scheme:    v.Scheme,
+				Title:     v.Title,
+			}
+			DB.Create(&webData)
 			log.Println(fmt.Sprintf("入库：%s", v.Domain))
-			//DB.Exec("insert into website(`domain`, `scheme`,`title`) select ?,?,? from dual where not exists(select domain from website where `domain` = ?)", v.Domain, v.Scheme, v.Title, v.Domain)
 		}
 	}
 }
@@ -129,13 +144,14 @@ func (website *Website) GetWebsite() error {
 	if website.Url == "" {
 		website.Url = website.Scheme + "://" + website.Domain
 	}
-	requestData, err := convert.Request(website.Url)
+	requestData, err := Request(website.Url, nil)
 	if err != nil {
 		log.Println(err)
 		return err
 	}
 	if requestData.Domain != "" {
 		website.Domain = requestData.Domain
+		website.TopDomain = getTopDomain(website.Domain)
 	}
 	if requestData.Scheme != "" {
 		website.Scheme = requestData.Scheme
@@ -147,6 +163,9 @@ func (website *Website) GetWebsite() error {
 	if err == nil {
 		website.IP = conn.String()
 	}
+
+	//尝试判断cms
+	website.Cms = getCms(requestData.Body)
 
 	//先删除一些不必要的标签
 	re, _ := regexp.Compile("\\<style[\\S\\s]+?\\</style\\>")
@@ -190,7 +209,7 @@ func (website *Website) GetWebsite() error {
 	//尝试获取QQ
 	reg = regexp.MustCompile(`(?i)(QQ|QQ客服|QQ号|QQ号码|QQ咨询|QQ联系|QQ交谈)\s*(:|：|\s)\s*([0-9]{5,12})`)
 	match = reg.FindStringSubmatch(contentText)
-	if len(match) > 1 {
+	if len(match) > 1 { //
 		website.QQ = match[3]
 	}
 	//尝试获取电话
@@ -226,10 +245,11 @@ func CollectLinks(doc *goquery.Document) []Link {
 						//去重
 						existsLinks[host] = true
 						links = append(links, Link{
-							Title:  title,
-							Url:    scheme + "://" + host,
-							Domain: host,
-							Scheme: scheme,
+							Title:     title,
+							Url:       scheme + "://" + host,
+							Domain:    host,
+							TopDomain: getTopDomain(host),
+							Scheme:    scheme,
 						})
 					}
 				}
@@ -240,18 +260,64 @@ func CollectLinks(doc *goquery.Document) []Link {
 	return links
 }
 
+func getTopDomain(domain string) string {
+	//第二后缀部分，com,org,gov,net,和cn所有2个字母的部分，可以认为是双后缀
+	items := strings.Split(domain, ".")
+	if len(items) <= 2 {
+		//只有2个，就是顶级了
+		return domain
+	}
+	//先截取成三个
+	items = items[len(items)-3:]
+	//先判断是否是双后缀，
+	if items[1] == "com" || items[1] == "org" || items[1] == "gov" || items[1] == "net" || (len(items[1]) == 2 && items[2] == "cn") {
+		//认为是双后缀
+		return strings.Join(items, ".")
+	}
+	//一般的域名
+	items = items[1:]
+	return strings.Join(items, ".")
+}
+
+func getCms(content string) string {
+	//discuz
+	if strings.Contains(content, "Discuz!") || strings.Contains(content, "forum.php") {
+		return "discuz"
+	}
+	if strings.Contains(content,"/a/") || strings.Contains(content,"/plus/") {
+		return "dedecms"
+	}
+	if strings.Contains(content,"/metinfo/") {
+		return "mitInfo"
+	}
+	if strings.Contains(content,"/e/") {
+		return "empirecms"
+	}
+	if strings.Contains(content,"/wp-/") {
+		return "wordpress"
+	}
+	if strings.Contains(content,"/templates/default/") && strings.Contains(content,"/index.php?ac=news") {
+		return "wodecms"
+	}
+	if strings.Contains(content,"/html/") || strings.Contains(content,"/template") || strings.Contains(content,"/uploadfiles/") {
+		return "cms"
+	}
+
+	return ""
+}
+
 func init() {
 	initDB()
 
 	websites := []Website{
-		{Scheme: "https", Domain: "www.hao123.com"},
-		{Scheme: "https", Domain: "www.2345.com"},
-		{Scheme: "https", Domain: "hao.360.com"},
+		{Scheme: "https", Domain: "www.hao123.com", TopDomain: "hao123.com"},
+		{Scheme: "https", Domain: "www.2345.com", TopDomain: "2345.com"},
+		{Scheme: "https", Domain: "hao.360.com", TopDomain: "360.com"},
 	}
 
 	for _, website := range websites {
 		DB.Where("`domain` = ?", website.Domain).FirstOrCreate(&website)
 	}
 	//释放所有status=2的数据
-	DB.Model(&Website{}).Where("status = 2").Update("status", 0)
+	DB.Model(&Website{}).Where("status = 2").UpdateColumn("status", 0)
 }

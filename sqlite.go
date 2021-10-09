@@ -7,7 +7,7 @@ import (
 	"os"
 )
 
-func initDB() {
+func initSqite() (*gorm.DB, error) {
 	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("%scobweb.db", ExecPath)), &gorm.Config{
 		Logger: nil,
 	})
@@ -16,9 +16,5 @@ func initDB() {
 		os.Exit(0)
 	}
 
-	db.AutoMigrate(&Website{})
-
-	DB = db
+	return db, nil
 }
-
-var DB *gorm.DB
