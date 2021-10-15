@@ -31,6 +31,6 @@ CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++ GOOS=windows 
 ```
 
 ## 版权声明
-© Fesion，tpyzlxy@163.com
+© Sinclair，tpyzlxy@gmail.com
 
 Released under the [MIT License](https://github.com/fesiong/cobweb/blob/master/License)
