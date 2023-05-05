@@ -14,7 +14,7 @@
 ## 如何安装使用
 * 下载可执行文件  
   请从Releases 中根据你的操作系统下载最新版的可执行文件，解压后，双击运行可执行文件即可开始采集之旅。  
-  下载文件后，请编辑config.sample.json,将mysql配置改成你的mysql信息。然后重命名为config.json。即可允许程序。
+  下载文件后，请编辑config.sample.json,将mysql配置改成你的mysql信息。然后重命名为config.json。即可允许程序。  
 <del>* 采集回来的数据存放在可执行文件目录下的cobweb.db 中。这个文件可以使用 Navicat 打开。打开的时候，选择sqlite3数据库。</del>
 * 自助编译  
   先clone代码到本地，本地安装go运行环境，在cobweb目录下打开cmd/Terminal命令行窗口，执行命。如果你没配置代理的话，还需要新设置go的代理

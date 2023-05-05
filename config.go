@@ -7,6 +7,8 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"path/filepath"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -22,7 +24,12 @@ func initJSON() {
 	sep := string(os.PathSeparator)
 	//root := filepath.Dir(os.Args[0])
 	//ExecPath, _ = filepath.Abs(root)
-	ExecPath, _ = os.Getwd()
+	ExecPath, _ = os.Executable()
+	baseName := filepath.Base(ExecPath)
+	ExecPath = filepath.Dir(ExecPath)
+	if strings.Contains(baseName, "go_build") || strings.Contains(ExecPath, "go-build") || strings.Contains(ExecPath, "/l_/") || strings.Contains(baseName, "Test") || strings.Contains(ExecPath, "Temp") {
+		ExecPath, _ = os.Getwd()
+	}
 	length := utf8.RuneCountInString(ExecPath)
 	lastChar := ExecPath[length-1:]
 	if lastChar != sep {

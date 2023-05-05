@@ -3,8 +3,11 @@ package cobweb
 import (
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
+	"gorm.io/gorm/clause"
 	"log"
 	"net"
+	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -12,7 +15,6 @@ import (
 )
 
 var MaxChan = 20
-var waitGroup sync.WaitGroup
 var ch = make(chan string, MaxChan)
 
 var existsDomain = &sync.Map{}
@@ -24,7 +26,7 @@ var topDomains = &sync.Map{}
  */
 func StartSpider() {
 	var websites []*Website
-	lastId := uint64(0)
+	lastId := 0
 	for {
 		DB.Where("id > ?", lastId).Order("id asc").Limit(50000).Find(&websites)
 		if len(websites) == 0 {
@@ -47,13 +49,18 @@ func StartSpider() {
 		}
 	}
 
-	SingleSpider()
-	waitGroup.Wait()
+	for {
+		SingleSpider()
+		log.Println("等待数据中，10秒后重试")
+		time.Sleep(2 * time.Second)
+	}
 	log.Println("执行结束")
 }
 
-func SingleSpider() {
+var lastGetId = 0
 
+func SingleSpider() {
+	var waitGroup sync.WaitGroup
 	runMap.Range(func(key interface{}, value interface{}) bool {
 		domain := key.(string)
 		scheme := value.(string)
@@ -65,34 +72,42 @@ func SingleSpider() {
 
 		ch <- v.Domain
 		waitGroup.Add(1)
-		go SingleData2(v)
+		go func(vv Website) {
+			defer func() {
+				waitGroup.Done()
+				<-ch
+			}()
+			SingleData2(vv)
+		}(v)
 
 		return true
 	})
 
 	var websites []Website
-	DB.Model(&Website{}).Where("`status` = 0").Limit(MaxChan * 10).Order("id asc").Find(&websites)
+	DB.Model(&Website{}).Where("id > ? and `status` = 0", lastGetId).Limit(MaxChan * 10).Order("id asc").Find(&websites)
 	if len(websites) > 0 {
+		lastGetId = websites[len(websites)-1].ID
 		for _, v := range websites {
 			ch <- v.Domain
 			waitGroup.Add(1)
-			go SingleData2(v)
+			go func(vv Website) {
+				defer func() {
+					waitGroup.Done()
+					<-ch
+				}()
+				SingleData2(vv)
+			}(v)
 		}
 	} else {
 		//读取完了，重头开始吗？
+		lastGetId = 0
+		DB.Model(&Website{}).Where("`id` > 0").UpdateColumn("status", 0)
 	}
 
-	log.Println("等待数据中，10秒后重试")
-	time.Sleep(10 * time.Second)
-
-	SingleSpider()
+	waitGroup.Wait()
 }
 
 func SingleData2(website Website) {
-	defer func() {
-		waitGroup.Done()
-		<-ch
-	}()
 	//锁定当前数据
 	DB.Model(&Website{}).Where("`domain` = ?", website.Domain).UpdateColumn("status", 2)
 	log.Println(fmt.Sprintf("开始采集：%s://%s", website.Scheme, website.Domain))
@@ -103,13 +118,13 @@ func SingleData2(website Website) {
 		website.Status = 3
 	}
 	log.Println(fmt.Sprintf("入库2：%s", website.Domain))
-	DB.Where("`domain` = ?", website.Domain).Save(&website)
+	DB.Where("`domain` = ?", website.Domain).Updates(&website)
 	if len(website.Links) > 0 {
 		for _, v := range website.Links {
 			//如果超过了5个子域名，则直接抛弃
 			item, itemOk := topDomains.Load(v.TopDomain)
 			if itemOk {
-				if item.(int) >= 5 {
+				if item.(int) >= 4 {
 					//跳过这个记录
 					continue
 				}
@@ -118,7 +133,7 @@ func SingleData2(website Website) {
 				continue
 			}
 			if itemOk {
-				topDomains.Store(v.TopDomain, item.(int) + 1)
+				topDomains.Store(v.TopDomain, item.(int)+1)
 			} else {
 				topDomains.Store(v.TopDomain, 1)
 			}
@@ -131,7 +146,9 @@ func SingleData2(website Website) {
 				Scheme:    v.Scheme,
 				Title:     v.Title,
 			}
-			DB.Create(&webData)
+			DB.Clauses(clause.OnConflict{
+				DoNothing: true,
+			}).Where("`domain` = ?", webData.Domain).Create(&webData)
 			log.Println(fmt.Sprintf("入库：%s", v.Domain))
 		}
 	}
@@ -144,7 +161,11 @@ func (website *Website) GetWebsite() error {
 	if website.Url == "" {
 		website.Url = website.Scheme + "://" + website.Domain
 	}
-	requestData, err := Request(website.Url, nil)
+	ops := &Options{}
+	if ProxyValid {
+		ops.ProxyIP = JsonData.DBConfig.Proxy
+	}
+	requestData, err := Request(website.Url, ops)
 	if err != nil {
 		log.Println(err)
 		return err
@@ -238,7 +259,7 @@ func CollectLinks(doc *goquery.Document) []Link {
 			scheme, host := ParseDomain(href)
 			if host != "" && scheme != "" {
 				hosts := strings.Split(host, ".")
-				if len(hosts) < 2 || len(hosts) > 3 && hosts[0] != "www" {
+				if len(hosts) < 2 || (len(hosts) > 3 && hosts[0] != "www") || (len(hosts) == 3 && hosts[0] != "www" && len(hosts[1]) > 4) {
 					//refuse
 				} else {
 					if !existsLinks[host] {
@@ -284,22 +305,22 @@ func getCms(content string) string {
 	if strings.Contains(content, "Discuz!") || strings.Contains(content, "forum.php") {
 		return "discuz"
 	}
-	if strings.Contains(content,"/a/") || strings.Contains(content,"/plus/") {
+	if strings.Contains(content, "/a/") || strings.Contains(content, "/plus/") {
 		return "dedecms"
 	}
-	if strings.Contains(content,"/metinfo/") {
+	if strings.Contains(content, "/metinfo/") {
 		return "mitInfo"
 	}
-	if strings.Contains(content,"/e/") {
+	if strings.Contains(content, "/e/") {
 		return "empirecms"
 	}
-	if strings.Contains(content,"/wp-/") {
+	if strings.Contains(content, "/wp-/") {
 		return "wordpress"
 	}
-	if strings.Contains(content,"/templates/default/") && strings.Contains(content,"/index.php?ac=news") {
+	if strings.Contains(content, "/templates/default/") && strings.Contains(content, "/index.php?ac=news") {
 		return "wodecms"
 	}
-	if strings.Contains(content,"/html/") || strings.Contains(content,"/template") || strings.Contains(content,"/uploadfiles/") {
+	if strings.Contains(content, "/html/") || strings.Contains(content, "/template") || strings.Contains(content, "/uploadfiles/") {
 		return "cms"
 	}
 
@@ -318,6 +339,23 @@ func init() {
 	for _, website := range websites {
 		DB.Where("`domain` = ?", website.Domain).FirstOrCreate(&website)
 	}
+
+	buf, err := os.ReadFile(fmt.Sprintf("%surls.txt", ExecPath))
+	if err == nil {
+		links := strings.Split(string(buf), "\n")
+		for _, v := range links {
+			parsed, err := url.Parse(strings.TrimSpace(v))
+			if err == nil {
+				website := &Website{
+					Scheme:    parsed.Scheme,
+					Domain:    parsed.Hostname(),
+					TopDomain: getTopDomain(parsed.Hostname()),
+				}
+				DB.Where("`domain` = ?", website.Domain).FirstOrCreate(&website)
+			}
+		}
+	}
+
 	//释放所有status=2的数据
 	DB.Model(&Website{}).Where("status = 2").UpdateColumn("status", 0)
 }

@@ -1,7 +1,7 @@
 package cobweb
 
 type Website struct {
-	ID          uint64 `json:"id" gorm:"column:id;type:bigint(20);unique;unsigned;primary_key;AUTO_INCREMENT"`
+	ID          int    `json:"id" gorm:"column:id;not null;PRIMARY_KEY;AUTO_INCREMENT"`
 	Domain      string `json:"domain" gorm:"column:domain;type:varchar(255);not null;default:'';index:idx_domain"`
 	TopDomain   string `json:"top_domain" gorm:"column:top_domain;type:varchar(255);not null;default:'';index:idx_top_domain"`
 	Scheme      string `json:"scheme" gorm:"column:scheme;type:varchar(10);not null;default:''"`

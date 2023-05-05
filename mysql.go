@@ -16,6 +16,7 @@ type dbConfig struct {
 	Host     string `json:"host"`
 	Port     int    `json:"port"`
 	Url      string `json:"-"`
+	Proxy    string `json:"proxy"`
 }
 
 func InitMySQL() (*gorm.DB, error) {
@@ -59,8 +60,8 @@ func InitMySQL() (*gorm.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	sqlDB.SetMaxIdleConns(1000)
-	sqlDB.SetMaxOpenConns(100000)
+	sqlDB.SetMaxIdleConns(100)
+	sqlDB.SetMaxOpenConns(1000)
 	sqlDB.SetConnMaxLifetime(-1)
 
 	return db, nil
