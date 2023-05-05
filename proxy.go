@@ -10,10 +10,12 @@ import (
 var ProxyValid = false
 
 func init() {
-	for {
-		checkProxy()
-		time.Sleep(10 * time.Second)
-	}
+	go func() {
+		for {
+			checkProxy()
+			time.Sleep(10 * time.Second)
+		}
+	}()
 }
 
 func checkProxy() {
