@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,7 +36,7 @@ func initJSON() {
 	if lastChar != sep {
 		ExecPath = ExecPath + sep
 	}
-
+	log.Println(ExecPath)
 	rawConfig, err := ioutil.ReadFile(fmt.Sprintf("%sconfig.json", ExecPath))
 	if err != nil {
 		fmt.Println("Invalid Config: ", err.Error())
@@ -44,6 +45,11 @@ func initJSON() {
 	if err := json.Unmarshal(rawConfig, &JsonData); err != nil {
 		fmt.Println("Invalid Config: ", err.Error())
 		os.Exit(-1)
+	}
+	// create data directory
+	_, err = os.Stat(ExecPath + "data")
+	if os.IsNotExist(err) {
+		_ = os.Mkdir(ExecPath+"data", os.ModePerm)
 	}
 }
 

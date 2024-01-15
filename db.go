@@ -25,5 +25,5 @@ func initDB() {
 		DB = db
 	}
 
-	DB.AutoMigrate(&Website{})
+	DB.AutoMigrate(&Website{}, &WebsiteData{})
 }

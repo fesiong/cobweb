@@ -14,8 +14,11 @@ type Website struct {
 	Server      string `json:"server" gorm:"column:server;type:varchar(255);not null;default:''"`
 	Cms         string `json:"cms" gorm:"column:cms;type:varchar(100);not null;default:''"`
 	Status      uint   `json:"status" gorm:"column:status;type:tinyint(1);not null;default:0"`
+	UpdatedTime int64  `json:"updated_time" gorm:"column:updated_time;type:int(11);autoUpdateTime;index:idx_updated_time"`
 	Url         string `json:"-" gorm:"-"`
 	Links       []Link `json:"-" gorm:"-"`
+	// 不写入这里，而是单独一个表
+	Content string `json:"content" gorm:"-"`
 }
 
 type Link struct {
@@ -24,4 +27,8 @@ type Link struct {
 	Domain    string `json:"domain"`
 	TopDomain string `json:"top_domain"`
 	Scheme    string `json:"scheme"`
+}
+type WebsiteData struct {
+	ID      int    `json:"id" gorm:"column:id;not null;PRIMARY_KEY;AUTO_INCREMENT"`
+	Content string `json:"content" gorm:"column:content;type:longtext default null"`
 }

@@ -21,9 +21,10 @@ var existsDomain = &sync.Map{}
 var runMap = &sync.Map{}
 var topDomains = &sync.Map{}
 
-/**
- * 循环获取数据
- */
+/*
+StartSpider
+  - 循环获取数据
+*/
 func StartSpider() {
 	var websites []*Website
 	lastId := 0
@@ -57,9 +58,10 @@ func StartSpider() {
 	log.Println("执行结束")
 }
 
-var lastGetId = 0
+var lastGetId int64
 
 func SingleSpider() {
+	lastGetId = GetLogNumber("last-get-id")
 	var waitGroup sync.WaitGroup
 	runMap.Range(func(key interface{}, value interface{}) bool {
 		domain := key.(string)
@@ -86,7 +88,7 @@ func SingleSpider() {
 	var websites []Website
 	DB.Model(&Website{}).Where("id > ? and `status` = 0", lastGetId).Limit(MaxChan * 10).Order("id asc").Find(&websites)
 	if len(websites) > 0 {
-		lastGetId = websites[len(websites)-1].ID
+		lastGetId = int64(websites[len(websites)-1].ID)
 		for _, v := range websites {
 			ch <- v.Domain
 			waitGroup.Add(1)
@@ -104,6 +106,7 @@ func SingleSpider() {
 		DB.Model(&Website{}).Where("`id` > 0").UpdateColumn("status", 0)
 	}
 
+	StoreLogNumber("last-get-id", lastGetId)
 	waitGroup.Wait()
 }
 
@@ -119,6 +122,13 @@ func SingleData2(website Website) {
 	}
 	log.Println(fmt.Sprintf("入库2：%s", website.Domain))
 	DB.Where("`domain` = ?", website.Domain).Updates(&website)
+	// 同时写入data
+	contentData := WebsiteData{
+		ID:      website.ID,
+		Content: website.Content,
+	}
+	DB.Where("`id` = ?", contentData.ID).FirstOrCreate(&contentData)
+	// end
 	if len(website.Links) > 0 {
 		for _, v := range website.Links {
 			//如果超过了5个子域名，则直接抛弃
@@ -154,9 +164,10 @@ func SingleData2(website Website) {
 	}
 }
 
-/**
- * 一个域名数据抓取
- */
+/*
+GetWebsite
+  - 一个域名数据抓取
+*/
 func (website *Website) GetWebsite() error {
 	if website.Url == "" {
 		website.Url = website.Scheme + "://" + website.Domain
@@ -170,6 +181,9 @@ func (website *Website) GetWebsite() error {
 		log.Println(err)
 		return err
 	}
+	// 注入内容
+	website.Content = requestData.Body
+
 	if requestData.Domain != "" {
 		website.Domain = requestData.Domain
 		website.TopDomain = getTopDomain(website.Domain)
